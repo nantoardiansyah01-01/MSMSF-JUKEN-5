@@ -21,64 +21,66 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: RESTORE Juken-main.zip BRUTE FORCE
+      - name: RESTORE Juken-main.zip LFS FIX
         run: |
-          echo "=== Zip sekarang ==="
+          git lfs install
+          git lfs fetch --all origin || true
           ls -lh *.zip || true
           
-          if [ ! -f Juken-main.zip ]; then
-            echo "Cari Juken-main.zip di SEMUA commit..."
-            # List semua commit, cek satu-satu
+          if [ ! -f Juken-main.zip ] || [ $(wc -c < Juken-main.zip) -lt 1000 ]; then
+            echo "Juken-main.zip masih pointer LFS / hilang, restore bener..."
+            rm -f Juken-main.zip
             for C in $(git rev-list --all); do
               if git ls-tree -r --name-only $C 2>/dev/null | grep -q "Juken-main.zip"; then
-                echo "KETEMU DI COMMIT $C"
-                git show $C:Juken-main.zip > Juken-main.zip
-                echo "Berhasil restore! Ukuran:"
+                echo "Found at $C, checkout dengan LFS..."
+                git checkout $C -- Juken-main.zip
+                git lfs pull --include="Juken-main.zip" || true
                 ls -lh Juken-main.zip
-                break
+                # Cek apakah masih pointer LFS
+                if head -n 1 Juken-main.zip | grep -q "version https://git-lfs"; then
+                  echo "Masih pointer, fetch lagi..."
+                  git lfs fetch --all
+                  git lfs checkout
+                else
+                  echo "OK ini sudah file zip asli!"
+                  break
+                fi
               fi
             done
-            
-            # Coba hash yang lu pernah punya
-            if [ ! -f Juken-main.zip ] || [ ! -s Juken-main.zip ]; then
-              echo "Coba hash a630993..."
-              git show a630993:Juken-main.zip > Juken-main.zip 2>/dev/null || true
-              git show 3eecb74:Juken-main.zip > Juken-main.zip 2>/dev/null || true
-            fi
           fi
-
-          echo "=== FINAL ==="
-          ls -lh *.zip || true
-          du -h Juken-main.zip || echo "GAGAL TOTAL, file tidak ada di history"
+          
+          echo "=== FINAL CHECK ==="
+          ls -lh *.zip
+          file Juken-main.zip
+          du -h Juken-main.zip
 
       - name: Build Hybrid
         run: |
           rm -rf source && mkdir source
-          unzip -o -q Juken-main.zip -d source
-          unzip -o -q Juken-blackwhite-dark-light.zip -d source || true
-          find source -name "gradlew" -type f
+          unzip -o Juken-main.zip -d source
+          unzip -o Juken-blackwhite-dark-light.zip -d source || true
+          find source -name "gradlew" -type f | head -n 5
 
       - name: Build APK
         run: |
           GP=$(find source -type f -name "gradlew" | head -n 1)
           echo "Gradlew: $GP"
-          [ -z "$GP" ] && echo "Gak ketemu gradlew" && exit 1
-          DIR=$(dirname "$GP")
-          cd "$DIR"
+          [ -z "$GP" ] && exit 1
+          cd $(dirname "$GP")
           chmod +x gradlew
           ./gradlew assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: MSMSF-RACING-V12-BLACKWHITE
+          name: MSMSF-RACING-V12-BLACKWHITE-FIX
           path: "**/build/outputs/apk/debug/*.apk"
 
       - name: Release V12
         uses: softprops/action-gh-release@v2
         with:
           tag_name: V.12
-          name: MSMSF RACING V.12
+          name: MSMSF RACING V.12 BlackWhite FIX LFS
           files: "**/build/outputs/apk/debug/*.apk"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
