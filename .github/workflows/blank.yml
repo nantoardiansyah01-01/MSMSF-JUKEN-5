@@ -21,68 +21,64 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: RESTORE Juken-main.zip yang hilang
+      - name: RESTORE Juken-main.zip BRUTE FORCE
         run: |
-          echo "=== File zip sekarang ==="
-          ls -lh *.zip 2>&1 || echo "Belum ada zip"
+          echo "=== Zip sekarang ==="
+          ls -lh *.zip || true
           
           if [ ! -f Juken-main.zip ]; then
-            echo "Juken-main.zip HILANG, restore dari history..."
-            # Cari semua commit yang pernah punya file ini
-            for COMMIT in $(git log --all --pretty=format:%H -- Juken-main.zip); do
-              echo "Cek commit $COMMIT"
-              git show $COMMIT:Juken-main.zip > Juken-main.zip 2>/dev/null
-              if [ -s Juken-main.zip ]; then
-                echo "Berhasil restore dari $COMMIT"
+            echo "Cari Juken-main.zip di SEMUA commit..."
+            # List semua commit, cek satu-satu
+            for C in $(git rev-list --all); do
+              if git ls-tree -r --name-only $C 2>/dev/null | grep -q "Juken-main.zip"; then
+                echo "KETEMU DI COMMIT $C"
+                git show $C:Juken-main.zip > Juken-main.zip
+                echo "Berhasil restore! Ukuran:"
+                ls -lh Juken-main.zip
                 break
               fi
             done
+            
+            # Coba hash yang lu pernah punya
+            if [ ! -f Juken-main.zip ] || [ ! -s Juken-main.zip ]; then
+              echo "Coba hash a630993..."
+              git show a630993:Juken-main.zip > Juken-main.zip 2>/dev/null || true
+              git show 3eecb74:Juken-main.zip > Juken-main.zip 2>/dev/null || true
+            fi
           fi
-          
-          echo "=== HASIL AKHIR ==="
-          ls -lh *.zip
-          echo "Ukuran Juken-main:"
-          du -h Juken-main.zip
-          echo "Ukuran BlackWhite:"
-          du -h Juken-blackwhite-dark-light.zip || true
+
+          echo "=== FINAL ==="
+          ls -lh *.zip || true
+          du -h Juken-main.zip || echo "GAGAL TOTAL, file tidak ada di history"
 
       - name: Build Hybrid
         run: |
-          rm -rf source
-          mkdir source
-          echo "Unzip Juken-main..."
+          rm -rf source && mkdir source
           unzip -o -q Juken-main.zip -d source
-          echo "Unzip BlackWhite diatasnya..."
-          unzip -o -q Juken-blackwhite-dark-light.zip -d source || echo "BlackWhite zip gak ada, skip"
-          echo "Cari gradlew..."
+          unzip -o -q Juken-blackwhite-dark-light.zip -d source || true
           find source -name "gradlew" -type f
 
       - name: Build APK
         run: |
-          GRADLEW=$(find source -type f -name "gradlew" | head -n 1)
-          echo "Gradlew ketemu di: $GRADLEW"
-          if [ -z "$GRADLEW" ]; then
-            echo "GAGAL: gradlew tidak ada! Isi source:"
-            find source -maxdepth 3 | head -n 100
-            exit 1
-          fi
-          DIR=$(dirname "$GRADLEW")
+          GP=$(find source -type f -name "gradlew" | head -n 1)
+          echo "Gradlew: $GP"
+          [ -z "$GP" ] && echo "Gak ketemu gradlew" && exit 1
+          DIR=$(dirname "$GP")
           cd "$DIR"
           chmod +x gradlew
-          ./gradlew assembleDebug --info
+          ./gradlew assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: MSMSF-RACING-V12-BLACKWHITE
           path: "**/build/outputs/apk/debug/*.apk"
-          if-no-files-found: warn
 
       - name: Release V12
         uses: softprops/action-gh-release@v2
         with:
           tag_name: V.12
-          name: MSMSF RACING V.12 BlackWhite - FINAL WORK
+          name: MSMSF RACING V.12
           files: "**/build/outputs/apk/debug/*.apk"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
